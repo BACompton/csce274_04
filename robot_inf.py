@@ -181,6 +181,7 @@ class Cliff:
                 Cliff.CLIFF_FR,
                 Cliff.VIRTUAL_WALL]
 
+
 class Dock:
     """ Contains the base identifier for a dock IR message along with the value
         for each of the beams/force field.
@@ -248,9 +249,23 @@ class Dock:
         return rtn
 
 
+class Charging:
+    """
+        Contains the packet information for the charging state packet. This
+        includes the different states, packet id, and the amount of data bytes
+    """
+
+    # Packet Info
+    PACKET_ID = 21
+    DATA_BYTES = 1
+
+    # Useful states
+    NOT_CHARGING = 0
+
 # =============================================================================
 #                               PID Controller
 # =============================================================================
+
 
 class PIDController:
     """
@@ -488,7 +503,6 @@ class PIDController:
         return rtn
 
 
-
 # =============================================================================
 #                       iRobot Create 2's Interface
 # =============================================================================
@@ -504,6 +518,7 @@ class Robot:
 
     _serial_conn = None
     _warning_song_num = None
+    _happy_song_num = None
 
     def __init__(self, port, buad=_BAUD_RATE, timeout=_TIMEOUT, start=True):
         """ Initializes a robot by first establishing the serial connection to
@@ -543,7 +558,7 @@ class Robot:
         :return:
             True if the change was successful, otherwise false.
         """
-        if new_state != self.state and new_state != State.START:
+        if new_state != State.START:
             self._serial_conn.send_command(new_state)
             self.state = new_state
             return True
@@ -630,6 +645,29 @@ class Robot:
             self.set_warning_song(0)
 
         self._serial_conn.send_command("141 " + str(self._warning_song_num))
+
+    def set_happy_song(self, song_number):
+        """ Sets the happy song to the specified song number. This should
+            be called before playing the happy song.
+
+        :param song_number:
+            The song number. Range: 0-4
+        :return:
+        """
+        self._happy_song_num = int(math.fabs(song_number)) % 5
+
+        # Song is in c major scale and is the 5th (G) to the 3rd (E).
+        cmd = "140 " + str(self._happy_song_num) + " 2 64 16 67 16"
+
+        self._serial_conn.send_command(cmd)
+
+    def play_happy_song(self):
+        """ Plays the happy song
+        """
+        if self._happy_song_num is None:
+            self.set_happy_song(1)
+
+        self._serial_conn.send_command("141 " + str(self._happy_song_num))
 
     # -------------------------------------------------------------------- #
     # -                     Sensor Reading Methods                       - #
@@ -940,6 +978,21 @@ class Robot:
             rtn[ir] = self.read_IR_char(ir)
 
         return rtn
+
+    def read_charging_state(self):
+        """
+            Retrieves the charging state of the robot via the charging state
+            packet.
+        :return:
+            The charging state of the robot. The meaning of the return value
+            is found in Charging. For example, Charging.NOT_CHARGING
+        """
+        data = self._read_packet(Charging.PACKET_ID, Charging.DATA_BYTES)
+
+        if len(data) == Charging.DATA_BYTES:
+            return struct.unpack("B", data)[0]
+        else:
+            return 0
 
     # -------------------------------------------------------------------- #
     # -                         Helper Methods                           - #

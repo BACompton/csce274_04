@@ -149,9 +149,10 @@ class _SensorUpdate(threading.Thread):
         robot = self._sensor.get_robot()
 
         while not self._stop:
-            self._sensor_sema.acquire_write()         # Acquire Lock
+
 
             # Update Buttons
+            self._sensor_sema.acquire_write()         # Acquire Lock
             self._sensor.request_sources.clear()
             self._sensor.btn_prev = self._sensor.btn_down.copy()
             self._sensor.btn_down.clear()
@@ -161,21 +162,34 @@ class _SensorUpdate(threading.Thread):
             for btn, value in btns.iteritems():
                 if value:
                     self._sensor.btn_down[btn] = value
+            self._sensor_sema.release_write()         # Release Lock
+
 
             # Update bump and wheel drops
+            self._sensor_sema.acquire_write()         # Acquire Lock
             self._sensor.bumps = robot.read_bumps()
             self._sensor.light_bumps = robot.read_light_bumps()
             self._sensor.wheels = robot.read_wheel_drops()
+            self._sensor_sema.release_write()         # Release Lock
 
             # Update cliff sensors
+            self._sensor_sema.acquire_write()         # Acquire Lock
             self._sensor.cliffs = robot.read_cliffs()
+            self._sensor_sema.release_write()         # Release Lock
 
             # Update encoders
+            self._sensor_sema.acquire_write()         # Acquire Lock
             self._sensor.encoders = robot.read_encoders()
+            self._sensor_sema.release_write()         # Release Lock
 
             # Update IR characters
+            self._sensor_sema.acquire_write()         # Acquire Lock
             self._sensor.ir = robot.read_IR_chars()
+            self._sensor_sema.release_write()         # Release Lock
 
+            # Update charging state
+            self._sensor_sema.acquire_write()         # Acquire Lock
+            self._sensor.charging = robot.read_charging_state()
             self._sensor_sema.release_write()         # Release Lock
 
             time.sleep(self._interval)
@@ -213,6 +227,7 @@ class Sensor:
             cliffs: A dictionary of all cliff sensors
             encoders: A dictionary of all encoders
             light_bumps: A dictionary of all the light bumps
+            charging: A integer value representing the charging state
 
         :type _robot robot_inf.Robot
         :type _sensor_lock _RWLock
@@ -233,6 +248,7 @@ class Sensor:
     cliffs = {}
     encoders = {}
     ir = {}
+    charging = 0
 
     def __init__(self, robot, interval=robot_inf.SENSOR_UPDATE_WAIT):
         """ Creates an instance of the sensor interface. This will
@@ -602,6 +618,24 @@ class Sensor:
 
         value = self.ir.copy()
         rtn = self._check_return(value, {}, enc_function)
+
+        self._sensor_lock.release_read()             # Release Lock
+
+        return rtn
+
+    def get_charging(self):
+        """ Gets the charging state of the robot.
+
+        :return:
+            The charging state of the robot. The meaning of this value can
+            be found within the robot_inf.Charging.
+        """
+        enc_function = "Charging"
+
+        self._sensor_lock.acquire_read()             # Acquire Lock
+
+        value = self.charging
+        rtn = self._check_return(value, 0, enc_function)
 
         self._sensor_lock.release_read()             # Release Lock
 
