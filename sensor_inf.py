@@ -192,6 +192,11 @@ class _SensorUpdate(threading.Thread):
             self._sensor.charging = robot.read_charging_state()
             self._sensor_sema.release_write()         # Release Lock
 
+            # Update the OI mode reading
+            self._sensor_sema.acquire_write()         # Acquire Lock
+            self._sensor.oi = robot.read_oi_mode()
+            self._sensor_sema.release_write()         # Release Lock
+
             time.sleep(self._interval)
 
     def stop(self):
@@ -228,6 +233,7 @@ class Sensor:
             encoders: A dictionary of all encoders
             light_bumps: A dictionary of all the light bumps
             charging: A integer value representing the charging state
+            oi: The current oi mode of the robot
 
         :type _robot robot_inf.Robot
         :type _sensor_lock _RWLock
@@ -249,6 +255,7 @@ class Sensor:
     encoders = {}
     ir = {}
     charging = 0
+    oi = 0
 
     def __init__(self, robot, interval=robot_inf.SENSOR_UPDATE_WAIT):
         """ Creates an instance of the sensor interface. This will
@@ -635,6 +642,24 @@ class Sensor:
         self._sensor_lock.acquire_read()             # Acquire Lock
 
         value = self.charging
+        rtn = self._check_return(value, 0, enc_function)
+
+        self._sensor_lock.release_read()             # Release Lock
+
+        return rtn
+
+    def get_oi_mode(self):
+        """ Gets the current OI mode of the robot.
+
+        :return:
+            The OI mode of the robot. The meaning of this value can
+            be found within the robot_inf.OI.
+        """
+        enc_function = "OI"
+
+        self._sensor_lock.acquire_read()             # Acquire Lock
+
+        value = self.oi
         rtn = self._check_return(value, 0, enc_function)
 
         self._sensor_lock.release_read()             # Release Lock

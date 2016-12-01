@@ -262,6 +262,20 @@ class Charging:
     # Useful states
     NOT_CHARGING = 0
 
+
+class OI:
+    """
+        Contains the packet information to get the current oi mode. This
+        includes the different states, packet id, and the amount of data bytes
+    """
+
+    # Packet Info
+    PACKET_ID = 35
+    DATA_BYTES = 1
+
+    # Useful states
+    PASSIVE = 1
+
 # =============================================================================
 #                               PID Controller
 # =============================================================================
@@ -980,6 +994,21 @@ class Robot:
         return rtn
 
     def read_charging_state(self):
+        """
+            Retrieves the charging state of the robot via the charging state
+            packet.
+        :return:
+            The charging state of the robot. The meaning of the return value
+            is found in Charging. For example, Charging.NOT_CHARGING
+        """
+        data = self._read_packet(Charging.PACKET_ID, Charging.DATA_BYTES)
+
+        if len(data) == Charging.DATA_BYTES:
+            return struct.unpack("B", data)[0]
+        else:
+            return 0
+
+    def read_oi_mode(self):
         """
             Retrieves the charging state of the robot via the charging state
             packet.
