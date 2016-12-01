@@ -34,8 +34,8 @@ class Behavior():
     """
     UNKNOWN = -1
     WALL_FOLLOW = 0
-    DOCK = 1
-    OBSTACLE_AVOIDANCE = 2
+    DOCK = 2
+    OBSTACLE_AVOIDANCE = 1
 
     _behavior = None
     _action = None
@@ -85,7 +85,6 @@ class Behavior():
         self._action = action
         self._action_lock.release()         # Release Lock
 
-
     def has_action(self):
         """
             Determines if the behavior generated an actuator action.
@@ -93,7 +92,7 @@ class Behavior():
             True if it has an action. Otherwise, false.
         """
         self._action_lock.acquire()         # Acquire Lock
-        rtn = self._action is not None
+        rtn = self._action is not None and self._action.type != Action.UNKNOWN
         self._action_lock.release()         # Release Lock
 
         return rtn
@@ -145,9 +144,9 @@ class Behavior():
         :return:
         """
         if action.type == Action.DRIVE_DIRECT:
-            #TODO finish need to add a reference
-            t = 0
-
+            # Temporary Logging Behavior used to track the selected action
+            # throughout a test course.
+            log_file.log_stmt("Drive Direct " + str(action.params))
 
     @staticmethod
     def behavior_list():
@@ -188,10 +187,10 @@ class Action():
     :type exec_time double
     :type event threading.Event
     """
-    UNKNOWN = -1
+    UNKNOWN = -2
     DRIVE_DIRECT = 2
     STOP_MODULES = 0
-    TERMINATE = 0
+    TERMINATE = -1
 
     type = None
     params = None
@@ -199,21 +198,22 @@ class Action():
     exec_time = None
     log = False
 
-    def __init__(self, type, params=(), time=robot_inf.SENSOR_UPDATE_WAIT):
+    def __init__(self, act_type, params=(),
+                 wait_time=robot_inf.SENSOR_UPDATE_WAIT):
         """
             Constructs an action of the specified type with the provided
              parameters
-        :param type:
+        :param act_type:
             The type of actuator action. This value should be set to available
             action within Action
         :param params:
             The list of parameters to use with the specified action type.
-        :param time
+        :param wait_time
             The amount of time that the action should run
         """
-        self.type = type
+        self.type = act_type
         self.params = params
-        self.exec_time = time
+        self.exec_time = wait_time
         self.event = threading.Event()
         self.log = False
 
@@ -253,7 +253,7 @@ class LogFile():
 
         if self._file is not None:
             self._lock.acquire()                 # Acquire Lock
-            self._file.write(self._timestamp()+", "+str(datum)+"\n")
+            self._file.write(LogFile._timestamp()+", "+str(datum)+"\n")
             self._lock.release()                 # Release Lock
 
     def open(self, name):
@@ -276,7 +276,8 @@ class LogFile():
         self._file.close()
         self._file = None
 
-    def _timestamp(self):
+    @staticmethod
+    def _timestamp():
         """ Gets the timestamp of the local system
         :return:
             Returns the current time
@@ -328,8 +329,7 @@ _WHEEL_VEL = 100
 # =============================================================================
 #                           Behavior Modules
 # =============================================================================
-# TODO: Update/Add behaviors
-# TODO: Add logging
+
 class ObstacleAvoidance(_StoppableThread, Behavior):
     """
         Behavior module responsible for avoiding obstacles and dangerous
@@ -355,10 +355,10 @@ class ObstacleAvoidance(_StoppableThread, Behavior):
     # the smallest detectable range. In this instance it was the light bump
     # sensor (IR bump).
     #
-    # The maximum wait time will rotate the robot roughly 15 degrees
-    # The minimum wait time will rotate the robot roughly 5 degrees
-    _MIN_TURN_TIME = robot_inf.WHEEL_BASE * (math.pi/12) / (2 * _WHEEL_VEL)
-    _MAX_TURN_TIME = robot_inf.WHEEL_BASE * (math.pi/36) / (2 * _WHEEL_VEL)
+    # The maximum wait time will rotate the robot roughly 30 degrees
+    # The minimum wait time will rotate the robot roughly 15 degrees
+    _MIN_TURN_TIME = robot_inf.WHEEL_BASE * (math.pi/6) / (2 * _WHEEL_VEL)
+    _MAX_TURN_TIME = robot_inf.WHEEL_BASE * (math.pi/12) / (2 * _WHEEL_VEL)
 
     # -------------------------------------------------------------------- #
     # -                    Behavior Definition                           - #
@@ -381,6 +381,19 @@ class ObstacleAvoidance(_StoppableThread, Behavior):
         self._log = log
 
     def run(self):
+        """
+            This method is where the obstacle avoidance behavior is defined. The
+            decision matrix for this docking behavior is as follows:
+                1) Stop All Active Behaviors
+                    a) Unsafe motion is detected by the internal helper method
+                       '_safe_motion'
+                2) Randomly Rotate a direction
+                    a) Both the left and right bumps are pressed
+                3) Rotate Left
+                    a) The left bump is pressed
+                4) Rotate Right
+                    a) The right bump is pressed
+        """
         while not self._stop:
             # Log the previous action
             if self.has_action():
@@ -412,20 +425,19 @@ class ObstacleAvoidance(_StoppableThread, Behavior):
                 action = Action(
                     Action.DRIVE_DIRECT,
                     params=[-_WHEEL_VEL, _WHEEL_VEL],
-                    time=random.uniform(ObstacleAvoidance._MIN_TURN_TIME,
-                                        ObstacleAvoidance._MAX_TURN_TIME)
+                    wait_time=random.uniform(ObstacleAvoidance._MIN_TURN_TIME,
+                                             ObstacleAvoidance._MAX_TURN_TIME)
                 )
             elif turn_ccw:
                 action = Action(
                     Action.DRIVE_DIRECT,
                     params=[_WHEEL_VEL, -_WHEEL_VEL],
-                    time=random.uniform(ObstacleAvoidance._MIN_TURN_TIME,
-                                        ObstacleAvoidance._MAX_TURN_TIME)
+                    wait_time=random.uniform(ObstacleAvoidance._MIN_TURN_TIME,
+                                             ObstacleAvoidance._MAX_TURN_TIME)
                 )
 
             # Issue the generated action
-            if action.type != Action.UNKNOWN:
-                self._set_action(action)
+            self._set_action(action)
             action.event.wait(action.exec_time)
 
     # -------------------------------------------------------------------- #
@@ -473,11 +485,438 @@ class ObstacleAvoidance(_StoppableThread, Behavior):
         :return:
             True if the robot should turn counter-clockwise
         """
-        if bumps(robot_inf.Bump.BUMP_R):
+        if bumps[robot_inf.Bump.BUMP_R]:
             return True
         if cliffs[robot_inf.Cliff.CLIFF_R] or cliffs[robot_inf.Cliff.CLIFF_FR]:
             return True
         return False
+
+
+class Docking(_StoppableThread, Behavior):
+    """
+        This is the low level actuator controller that is responsible for
+        docking the robot on a charging station. Once successfully docked this
+        behavior will stop the program.
+
+        :type _sensor sensor_inf.Sensor
+        :type _log LogFile
+        :type _prev_action Action
+        :type _lost_center bool
+    """
+
+    # -------------------------------------------------------------------- #
+    # -                     Internal Constants                           - #
+    # -------------------------------------------------------------------- #
+
+    # The number of times the sampled infrared signal can be empty before
+    # the docking station is considered lost.
+    LOST_DOCK_LIMIT = 10
+
+    # The number of times the behavior should sample the infrared signal
+    # before generating an action.
+    SAMPLES = 10
+
+    # The amount of time in seconds a forward or backward command should be ran.
+    SEEK_EXEC_TIME = 10*robot_inf.SENSOR_UPDATE_WAIT
+
+    # -------------------------------------------------------------------- #
+    # -                    Behavior Definition                           - #
+    # -------------------------------------------------------------------- #
+
+    _sensor = None
+    _log = None
+    _prev_action = Action(Action.UNKNOWN)
+    _lost_center = False
+
+    def __init__(self, sensor, log):
+        _StoppableThread.__init__(self, daemon=True)
+        Behavior.__init__(self, Behavior.DOCK)
+        self._sensor = sensor
+        self._log = log
+        self._prev_action = Action(Action.UNKNOWN)
+        self._lost_center = False
+
+    def run(self):
+        """
+            This method is where the docking behavior is defined. The decision
+            matrix for this docking behavior is as follows:
+                NOTE: If any of the situations presented within a behavior are
+                      met that action will be selected
+
+                      In the case where multiple action can selected, the action
+                      that comes first will be the one selected.
+
+                1) Terminate Program:
+                    a) The robot is in any charging state
+                2) Move Backwards
+                    a) The left or right bumper is pressed
+                3) Drive Forward
+                    a) The internal method '_drive_forward' returns True
+                    b) No other explict direction can be determined and the
+                       last actual movement was forward.
+                4) Rotate clockwise
+                    a) The internal method '_rotate_cw' returns True
+                5) Rotate counter-clockwise
+                    a) The internal method '_rotate_ccw' returns True
+                6) Repeat last instruction
+                    a) The dock can still be detected, but no explict action
+                       can be determined, and the center of the dock is already
+                       lost.
+
+                       This case helps the docking behavior recover in the case
+                       it over corrects itself.
+                7) Randomly Rotate a Direction
+                    a) The dock can still be detected but no explicit action
+                       be determined, the previous action is not a valid
+                       movement, and the center of the dock was just lost.
+
+                       This case seeks the detected dock's center whenever an
+                       explicit direction cannot be determined.
+                8) Reverse Previous Direction
+                    a) The dock can still be detected but no explicit action
+                       be determined and the center of the dock was just lost.
+
+                       This case initially helps the docking behavior determine
+                       the direction to rotate whenever it happens to over
+                       correct itself.
+                9) Await further instructions
+                    a) The robot is close enough to a new dock to decide on
+                       an action.
+                    b) There are not enough IR sample to perform an action.
+                       The required number of samples is defined in
+                       Docking.SAMPLES.
+                    c) The active dock's signal was lost.
+                10) Nothing
+                    a) No active dock is found
+        """
+        sample = self._get_sample_base()
+        sample_count = 0
+        dock_count = Docking.LOST_DOCK_LIMIT
+
+        while not self._stop:
+            # Log the previous action
+            if self.has_action():
+                prev_action = self.get_action()
+
+                if prev_action.log:
+                    Behavior.log_action(self._log, self._sensor, prev_action)
+
+            # Gather necessary sensor data
+            ir_chars = self._sensor.get_IR_chars()
+            bumps = self._sensor.get_bumps()
+            charging = self._sensor.get_charging()
+
+            # Process the sensor data by decomposing the acquired characters
+            # into boolean flags for the force field, red buoy, nad green buoy.
+            data = {}
+            for ir in ir_chars:
+                data[ir] = robot_inf.Dock.decompose(ir_chars[ir])
+            self._add_input(sample, data)
+            sample_count += 1
+
+            # Generate action based on the current sample
+            if bumps[robot_inf.Bump.BUMP_L] \
+                    or bumps[robot_inf.Bump.BUMP_R]:
+                action = Action(Action.DRIVE_DIRECT,
+                                [-_WHEEL_VEL, -_WHEEL_VEL],
+                                wait_time=Docking.SEEK_EXEC_TIME)
+            else:
+                action = Action(Action.DRIVE_DIRECT, [0, 0])
+
+            if charging != robot_inf.Charging.NOT_CHARGING:
+                action = Action(Action.TERMINATE)
+
+            # If there was not dock to follow
+            elif dock_count >= Docking.LOST_DOCK_LIMIT:
+                # If a new dock is found
+                if self._possible_action(sample):
+                    action = Action(Action.DRIVE_DIRECT, [0, 0])
+                    dock_count = 0
+                    sample_count = 0
+                    sample = self._get_sample_base()
+                else:
+                    action = Action(Action.UNKNOWN)
+                    self._prev_action = action
+                    self._lost_center = False
+
+            # If there are enough samples to preform an action
+            elif sample_count >= Docking.SAMPLES:
+                # If no dock was detected
+                if self._lost_dock(sample):
+                    # If successfully docked
+                    action = Action(Action.DRIVE_DIRECT, [0, 0])
+                    dock_count += 1
+                # If the dock was detected
+                else:
+                    # If not collision, generate a docking action.
+                    if action.type != Action.UNKNOWN:
+                        action = self._gen_action(sample)
+                        self._prev_action = action
+                    dock_count = 0
+
+                sample_count = 0
+                sample = self._get_sample_base()
+
+            self._set_action(action)
+            self.get_action().event.wait(action.exec_time)
+
+    # -------------------------------------------------------------------- #
+    # -                      Internal Helpers                            - #
+    # -------------------------------------------------------------------- #
+
+    def _get_sample_base(self):
+        """
+            Generates the base data structure for a new sample.
+        :return:
+            The empty data structure for a new sample.
+        """
+        return {
+            robot_inf.Dock.OMNI: {},
+            robot_inf.Dock.LEFT: {},
+            robot_inf.Dock.RIGHT: {}
+        }
+
+    def _add_input(self, sample, data):
+        """ Adds the provided IR data to IR action sample.
+
+        :param sample:
+            The IR sample that should append the new IR data
+        :param data:
+            The new IR data to add to the IR sample
+        """
+        for ir in data:
+            for key in data[ir]:
+                if key in data[ir] and data[ir][key]:
+                    if ir not in sample:
+                        sample[ir] = {}
+
+                    sample[ir][key] = True
+
+    def _lost_dock(self, sample):
+        """ Determines if a the dock was not detected given the current sample.
+
+        :param sample:
+            The infrared character sample to use
+        :return:
+            True if the sample has no infrared characters from a dock.
+        """
+        return len(sample[robot_inf.Dock.OMNI]) == 0 \
+            and len(sample[robot_inf.Dock.RIGHT]) == 0 \
+            and len(sample[robot_inf.Dock.LEFT]) == 0
+
+    def _possible_action(self, sample):
+        """ Determines if a the sample can produce an explicit value.
+
+        :param sample:
+            The infrared character sample to use
+        :return:
+            True if the sample can result in a proper action.
+        """
+        return self._drive_forward(sample) \
+            or self._rotate_cw(sample) \
+            or self._rotate_ccw(sample)
+
+    def _gen_action(self, sample):
+        """ Generates an action based on the provided infrared sample. The gaol
+            of the resulting action is to get the robot closer to a successful
+            dock.
+
+        :param sample:
+            The infrared sample that the action will be based upon
+        :return:
+            An action that should provide progress to a successful dock.
+        """
+        rtn = Action(Action.DRIVE_DIRECT, [0, 0],
+                     wait_time=robot_inf.SENSOR_UPDATE_WAIT*5)
+        has_prev_action = self._prev_action.type == Action.UNKNOWN
+        forward = has_prev_action \
+            and self._prev_action.type == Action.DRIVE_DIRECT \
+            and self._prev_action.params[0] > 0 \
+            and self._prev_action.params[0] == self._prev_action.params[1]
+
+        found_center = True
+        if self._drive_forward(sample):
+            rtn.params = [_WHEEL_VEL, _WHEEL_VEL]
+            rtn.exec_time = Docking.SEEK_EXEC_TIME
+        elif self._rotate_cw(sample):
+            rtn.params = [-_WHEEL_VEL, _WHEEL_VEL]
+        elif self._rotate_ccw(sample):
+            rtn.params = [_WHEEL_VEL, -_WHEEL_VEL]
+        elif has_prev_action:
+            # Continue to move forward
+            if forward:
+                rtn.params = [_WHEEL_VEL, _WHEEL_VEL]
+                rtn.exec_time = Docking.SEEK_EXEC_TIME
+            # Continue to rotate in the chosen direction
+
+            elif self._lost_center:
+                found_center = False
+                rtn = self._prev_action
+
+            # Choose a random way to rotate
+            elif not self._lost_center \
+                    and self._prev_action.type == Action.DRIVE_DIRECT:
+                found_center = False
+
+                if self._prev_action.params[0] != 0:
+                    rtn.params = [-self._prev_action.params[0],
+                                -self._prev_action.params[1]]
+                    rtn.exec_time = self._prev_action.exec_time
+                else:
+                    gain = 1
+                    if bool(random.getrandbits(1)):
+                        gain = -1
+
+                    rtn.params = [gain * _WHEEL_VEL, -gain * _WHEEL_VEL]
+
+        self._lost_center = not found_center
+        return rtn
+
+    def _rotate_cw(self, sample):
+        """
+            Determines if the robot should rotate clockwise to line itself
+            up with the dock.
+
+            This method should return True if any of the following situations
+            are present:
+                1) The right IR sensor detects the green buoy and not the red
+                   buoy. This essentially translates to the case where the robot
+                   is turned too much counter-clockwise.
+
+                   The goal for this situation is to try and keep the red and
+                   green buoy within the detection range.
+
+                2) The left IR sensor detects the green buoy and the right IR
+                   sensor does not detect the red buoy. This situation
+                   represents the case where the robot has slightly overturned
+                   counter-clockwise.
+
+                   The goal for this situation is to try and align the robot
+                   to the center of the dock
+        :param sample:
+            The sample that the decision is based on.
+        :return:
+            True if any of the above situations happen. Otherwise, False.
+        """
+        if self._check_ir(sample[robot_inf.Dock.RIGHT],
+                          robot_inf.Dock.GREEN_BUOY) \
+                and not self._check_ir(sample[robot_inf.Dock.RIGHT],
+                                       robot_inf.Dock.RED_BUOY):
+            return True
+
+        return self._check_ir(sample[robot_inf.Dock.LEFT],
+                              robot_inf.Dock.GREEN_BUOY) \
+            and not self._check_ir(sample[robot_inf.Dock.RIGHT],
+                                   robot_inf.Dock.RED_BUOY)
+
+    def _rotate_ccw(self, sample):
+        """
+            Determines if the robot should rotate counter-clockwise to line
+            itself up with the dock.
+
+            This method should return True if any of the following situations
+            are present:
+                1) The left IR sensor detects the red buoy and not the green
+                   buoy. This essentially translates to the case where the robot
+                   is turned too much clockwise.
+
+                   The goal for this situation is to try and keep the red and
+                   green buoy within the detection range.
+
+                2) The right IR sensor detects the red buoy and the left IR
+                   sensor does not detect the green buoy. This situation
+                   represents the case where the robot has slightly overturned
+                   clockwise.
+
+                   The goal for this situation is to try and align the robot
+                   to the center of the dock
+        :param sample:
+            The sample that the decision is based on.
+        :return:
+            True if any of the above situations happen. Otherwise, False.
+        """
+        if not self._check_ir(sample[robot_inf.Dock.LEFT],
+                              robot_inf.Dock.GREEN_BUOY) \
+                and self._check_ir(sample[robot_inf.Dock.LEFT],
+                                   robot_inf.Dock.RED_BUOY):
+            return True
+
+        return not self._check_ir(sample[robot_inf.Dock.LEFT],
+                                  robot_inf.Dock.GREEN_BUOY) \
+            and self._check_ir(sample[robot_inf.Dock.RIGHT],
+                               robot_inf.Dock.RED_BUOY)
+
+    def _drive_forward(self, sample):
+        """
+            Determines if the robot should move forward by checking the left IR
+            sensor for the green buoy and the right for the red buoy.
+
+            The overall goal of this method is to approach the dock .
+        :param sample:
+            The sample that the decision is based on.
+        :return:
+            True if both sensors detect the respective buoy. Otherwise, False.
+        """
+        return self._check_ir(sample[robot_inf.Dock.LEFT],
+                              robot_inf.Dock.GREEN_BUOY) \
+            and self._check_ir(sample[robot_inf.Dock.RIGHT],
+                               robot_inf.Dock.RED_BUOY)
+
+    def _check_ir(self, ir, flag):
+        """ Determines the value of the specified flag of the given infrared
+            character sensor.
+
+        :param ir:
+            The infrared character sensor to check
+        :param flag:
+            The specific infrared flag to find.
+        :return:
+            True if the flag is in the sensor's readings and is True.
+            Otherwise, False.
+        """
+        if flag not in ir:
+            return False
+        return ir[flag]
+
+    def _check_ir_set(self, ir, key_set={}):
+        """ Checks if the infrared sensor's charater matches the provided flags.
+
+        :param ir:
+            The infrared character sensor to check
+        :param key_set:
+            The flags to check for
+        :return:
+            True if the infrared sensor's value has the specified flags
+        """
+        for key in key_set:
+            val = self.check_ir(ir, key)
+
+            if val != key_set[key]:
+                return False
+        return True
+
+    def _create_key_set(self, force=None, red=None, green=None):
+        """ Constructs a key set based on the provided flags.
+
+        :param force:
+            The force field flag
+        :param red:
+            The red buoy flag
+        :param green:
+            The green buoy flag
+        :return:
+            The key set of the provided flags
+        """
+        rtn = {}
+
+        if force is not None:
+            rtn[robot_inf.Dock.FORCE_FIELD] = force
+        if red is not None:
+            rtn[robot_inf.Dock.RED_BUOY] = red
+        if green is not None:
+            rtn[robot_inf.Dock.GREEN_BUOY] = green
+
+        return rtn
 
 
 class WallFollow(_StoppableThread, Behavior):
@@ -492,8 +931,6 @@ class WallFollow(_StoppableThread, Behavior):
     # -------------------------------------------------------------------- #
     # -                     Internal Constants                           - #
     # -------------------------------------------------------------------- #
-
-    # TODO: Test/adjust all set points, gains, and constants
 
     # The sensor value for the desired distance from the wall
     _WALL_GOAL = 250
@@ -510,7 +947,7 @@ class WallFollow(_StoppableThread, Behavior):
     # threshold's value is calculated based on the following formula:
     #
     #   num_of_cycles = max_time / (wait_time + avg_cycle_length)
-    _LOST_WALL_THRESHOLD = math.ceil(15. / (robot_inf.SENSOR_UPDATE_WAIT + .25))
+    _LOST_WALL_THRESHOLD = math.ceil(15. / (robot_inf.SENSOR_UPDATE_WAIT+.05))
 
     # -------------------------------------------------------------------- #
     # -                    Behavior Definition                           - #
@@ -526,6 +963,20 @@ class WallFollow(_StoppableThread, Behavior):
         self._log = log
 
     def run(self):
+        """
+            This method is where the wall following behavior is defined. The
+            decision matrix for this docking behavior is as follows:
+                1) Turn Left
+                    a) The controller associated with the front light bump
+                       sensor has an output that exceeds the value expressed by
+                       WallFollow._LEFT_TURN_THRESHHOLD.
+                2) Move Forward
+                    a) The number of cycles since the last wall sighting
+                       exceeds the value in WallFollow._LOST_WALL_THRESHHOLD.
+                3) Use wall following PID controller
+                    a) No other action can be selected
+
+        """
         # The initial points for each PID controller
         init_follow_pt = self._sensor.is_light_bump(robot_inf.Bump.LIGHT_BUMP_R)
         init_turn_pt = self._sensor.is_light_bump(robot_inf.Bump.LIGHT_BUMP_CR)
@@ -544,16 +995,17 @@ class WallFollow(_StoppableThread, Behavior):
         #   - follow_gains: The default gains for the wall following behavior
         #   - right_turn_gains: Adjust the gains to perform a right wall follow
         #
-        # Instead of creating a separate PID controller for right wall following,
-        # the gains are adjusted to reduce the radius of a right turn since
-        # the wall following PID controller already covers right turns.
+        # Instead of creating a separate PID controller for right wall
+        # following, the gains are adjusted to reduce the radius of a right
+        # turn since the wall following PID controller already covers right
+        # turns.
         follow_gains = {
-            robot_inf.PIDController.KP_KEY: .1,
-            robot_inf.PIDController.KI_KEY: .0025,
+            robot_inf.PIDController.KP_KEY: .05,
+            robot_inf.PIDController.KI_KEY: .005,
             robot_inf.PIDController.KD_KEY: .0025
         }
         right_turn_gains = {
-            robot_inf.PIDController.KP_KEY: .2
+            robot_inf.PIDController.KP_KEY: .225
         }
         wall_follow.set_gains(follow_gains)
 
@@ -564,13 +1016,16 @@ class WallFollow(_StoppableThread, Behavior):
         # -                    Behavior Decision                     - #
         # ------------------------------------------------------------ #
 
-        while not self._wait(wait_time, robot_inf.SENSOR_UPDATE_WAIT):
+        while not self._stop:
             # Log the previous action
+
             if self.has_action():
                 prev_action = self.get_action()
 
                 if prev_action.log:
                     Behavior.log_action(self._log, self._sensor, prev_action)
+            else:
+                prev_action = Action(Action.UNKNOWN)
 
             left_output = left_turn.get_output()
 
@@ -594,7 +1049,8 @@ class WallFollow(_StoppableThread, Behavior):
             # If no right wall
             if wall_pt < WallFollow._WALL_THRESHOLD:
                 wall_follow.set_gains(right_turn_gains)
-                no_wall_count += 1
+                if prev_action.log:
+                    no_wall_count += 1
                 wall_follow.reset(init_pt=wall_pt)
 
             # Found right wall
@@ -606,7 +1062,7 @@ class WallFollow(_StoppableThread, Behavior):
             self.get_action().event.wait(wait_time)
 
     # -------------------------------------------------------------------- #
-    # -                  Behavior Definitions                            - #
+    # -                  Action Definitions                            - #
     # -------------------------------------------------------------------- #
 
     def _drive_ccw(self):
@@ -686,7 +1142,7 @@ class RobotController(_StoppableThread):
 
         # Open serial connection to robot.
         robot = robot_inf.Robot(port_list[0])
-        robot.change_state(robot_inf.State.FULL)
+        robot.change_state(robot_inf.State.SAFE)
         print "Connected to robot"
 
         # Synchronized sensor interface for the serial connection to the robot
@@ -702,13 +1158,14 @@ class RobotController(_StoppableThread):
                 if len(self._active_behaviors) == 0:
                     self._log.log_stmt("Start Button Press")
 
-                    # TODO: Initialize and start the necessary modules
+                    # Initialize and start the necessary modules
                     self._active_behaviors = [
                         ObstacleAvoidance(sensor, self._log),
-                        WallFollow(sensor, self._log)
+                        WallFollow(sensor, self._log),
+                        Docking(sensor, self._log)
                     ]
                     for module in self._active_behaviors:
-                        if module is threading.Thread:
+                        if isinstance(module, threading.Thread):
                             module.start()
 
                     # Order the active behaviors based on priority
@@ -738,6 +1195,11 @@ class RobotController(_StoppableThread):
                     self._interpret_action(robot, module, action)
                     break
 
+            # Stop the robot if no action is found.
+            if self._selected_behavior == Behavior.UNKNOWN:
+                Behavior.execute_action(robot,
+                                        Action(Action.DRIVE_DIRECT, [0, 0]))
+
             # Preform the selected action for specified amount of time or until
             # a higher priority action arrives. The action can also be
             # interrupted by a CLEAN button press.
@@ -746,27 +1208,33 @@ class RobotController(_StoppableThread):
         print "Stopping Listening"
 
         # Cleans up all threads spawned during execution.
-        self._stop_behaviors(robot)
+        self._stop_behaviors(robot, wait=True)
         robot.change_state(robot_inf.State.PASSIVE)
         self._log.close()
         sensor.stop_update(join=True)
+        exit(0)
 
     # -------------------------------------------------------------------- #
     # -                     Internal Helpers                             - #
     # -------------------------------------------------------------------- #
 
-    def _stop_behaviors(self, robot):
+    def _stop_behaviors(self, robot, wait=False):
         """
             Notifies all modules to halt execution and stops the robot.
         :param robot:
             The robot that should be stopped.
+        :param wait:
+            Flags the method to wait for each behavior to end before returning
         """
-        for i in range(len(self._active_behaviors)-1, 0, -1):
+        for i in range(len(self._active_behaviors)-1, -1, -1):
             behavior = self._active_behaviors[i]
 
-            if behavior is _StoppableThread:
+            if isinstance(behavior, _StoppableThread):
                 behavior.stop()
-            self._active_behaviors.remove(i)
+                if wait:
+                    behavior.join()
+
+            self._active_behaviors.remove(behavior)
         robot.drive_direct(0,0)
 
     def _wait(self, wait_time, interval, sensor):
@@ -819,6 +1287,10 @@ class RobotController(_StoppableThread):
             else:
                 break
 
+        # Check to see if the robot docked during action.
+        if sensor.get_charging() != robot_inf.Charging.NOT_CHARGING:
+            return True
+
         # Check to see if the CLEAN button is pressed
         return sensor.is_btn_pressed(robot_inf.Button.CLEAN, src="Interrupt")
 
@@ -840,6 +1312,13 @@ class RobotController(_StoppableThread):
         """
         if action.type == Action.TERMINATE:
             self.stop()
+
+            # Play Docking song
+            robot.change_state(robot_inf.State.SAFE)
+            time.sleep(robot_inf.SENSOR_UPDATE_WAIT)
+            robot.play_happy_song()
+            action.exec_time = .5
+            print "Press any key to finish termination."
         elif action.type == Action.STOP_MODULES:
             self._stop_behaviors(robot)
             self._exec_action.exec_time = 0
@@ -861,8 +1340,19 @@ def main():
     control.start()
 
     # Prompt to exit safely
-    while raw_input("Type 'exit' to quit.") != "exit":
+    prompt = "Type 'exit' to quit.\n"
+    while True:
+        txt = ""
+
+        try:
+            txt = raw_input(prompt)
+        except ValueError:
+            txt = "exit"
+
+        if txt == "exit":
+            break
         time.sleep(robot_inf.SENSOR_UPDATE_WAIT)
+
 
     control.stop()
     # Wait for every thing to stop safely
