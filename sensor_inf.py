@@ -184,7 +184,7 @@ class _SensorUpdate(threading.Thread):
 
             # Update IR characters
             self._sensor_sema.acquire_write()         # Acquire Lock
-            self._sensor.ir = robot.read_IR_chars()
+            self._sensor.ir = robot.read_ir_chars()
             self._sensor_sema.release_write()         # Release Lock
 
             # Update charging state
@@ -586,7 +586,7 @@ class Sensor:
 
         return dist
 
-    def get_IR_char(self, ir_sensor):
+    def get_ir_char(self, ir_sensor):
         """ Gets the specified IR character sensor's value.
 
         :param ir_sensor:
@@ -605,7 +605,7 @@ class Sensor:
 
         return rtn
 
-    def get_IR_chars(self):
+    def get_ir_chars(self):
         """ Gets the specified IR character sensors' value.
 
         :return:

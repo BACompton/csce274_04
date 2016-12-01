@@ -602,7 +602,7 @@ class Docking(_StoppableThread, Behavior):
                     Behavior.log_action(self._log, self._sensor, prev_action)
 
             # Gather necessary sensor data
-            ir_chars = self._sensor.get_IR_chars()
+            ir_chars = self._sensor.get_ir_chars()
             bumps = self._sensor.get_bumps()
             charging = self._sensor.get_charging()
 

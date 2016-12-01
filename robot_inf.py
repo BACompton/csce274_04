@@ -947,7 +947,7 @@ class Robot:
 
         return rtn
 
-    def read_IR_char(self, dir):
+    def read_ir_char(self, dir):
         """ Read the specified IR character packet.
         :param dir:
             The IR character packet to read. This should only take values of
@@ -965,7 +965,7 @@ class Robot:
         else:
             return 0
 
-    def read_IR_chars(self):
+    def read_ir_chars(self):
         """ Reads the current character of all the IR character sensors.
         :return:
             A dictionary of each IT character's value. Can be
@@ -975,7 +975,7 @@ class Robot:
         rtn = {}
 
         for ir in ir_list:
-            rtn[ir] = self.read_IR_char(ir)
+            rtn[ir] = self.read_ir_char(ir)
 
         return rtn
 
