@@ -120,6 +120,8 @@ class Behavior():
         :param action:
             The actuator action to preform
         """
+        action.log = True
+
         if action.type == Action.STOP_MODULES \
                 or Action.type == Action.TERMINATE:
             robot.drive_direct(0, 0)
@@ -141,12 +143,12 @@ class Behavior():
         :type action Action
         :param action:
             The action that needs to be logged
-        :return:
         """
         if action.type == Action.DRIVE_DIRECT:
             # Temporary Logging Behavior used to track the selected action
             # throughout a test course.
-            log_file.log_stmt("Drive Direct " + str(action.params))
+            log_file.log_stmt("Drive Direct " + str(action.params)
+                              + " for " + str(action.exec_time) + " s")
 
     @staticmethod
     def behavior_list():
@@ -512,6 +514,11 @@ class Docking(_StoppableThread, Behavior):
     # the docking station is considered lost.
     LOST_DOCK_LIMIT = 10
 
+    # The light bump threshold values that specify when the robot is too close
+    # with wrong rotation.
+    CLOSE_THRESHOLD_C = 150
+    CLOSE_THRESHOLD_F = 100
+
     # The number of times the behavior should sample the infrared signal
     # before generating an action.
     SAMPLES = 10
@@ -550,10 +557,14 @@ class Docking(_StoppableThread, Behavior):
                     a) The robot is in any charging state
                 2) Move Backwards
                     a) The left or right bumper is pressed
+                    b) No other explict direction can be determined and the
+                       robot is too close to the dock with wrong rotation.
                 3) Drive Forward
                     a) The internal method '_drive_forward' returns True
                     b) No other explict direction can be determined and the
                        last actual movement was forward.
+                    c) No other explict direction can be determined and the
+                       close to the dock with about the correct rotation.
                 4) Rotate clockwise
                     a) The internal method '_rotate_cw' returns True
                 5) Rotate counter-clockwise
@@ -604,6 +615,7 @@ class Docking(_StoppableThread, Behavior):
             # Gather necessary sensor data
             ir_chars = self._sensor.get_ir_chars()
             bumps = self._sensor.get_bumps()
+            light_bumps = self._sensor.get_light_bumps()
             charging = self._sensor.get_charging()
 
             # Process the sensor data by decomposing the acquired characters
@@ -616,28 +628,36 @@ class Docking(_StoppableThread, Behavior):
 
             # Generate action based on the current sample
             if bumps[robot_inf.Bump.BUMP_L] \
-                    or bumps[robot_inf.Bump.BUMP_R]:
+                    or bumps[robot_inf.Bump.BUMP_R] \
+                    or light_bumps[robot_inf.Bump.LIGHT_BUMP_FR] > Docking.CLOSE_THRESHOLD_F \
+                    or light_bumps[robot_inf.Bump.LIGHT_BUMP_FL] > Docking.CLOSE_THRESHOLD_F:
                 action = Action(Action.DRIVE_DIRECT,
                                 [-_WHEEL_VEL, -_WHEEL_VEL],
+                                wait_time=Docking.SEEK_EXEC_TIME)
+            elif light_bumps[robot_inf.Bump.LIGHT_BUMP_CR] > Docking.CLOSE_THRESHOLD_C \
+                    or light_bumps[robot_inf.Bump.LIGHT_BUMP_CL] > Docking.CLOSE_THRESHOLD_C:
+                action = Action(Action.DRIVE_DIRECT,
+                                [_WHEEL_VEL, _WHEEL_VEL],
                                 wait_time=Docking.SEEK_EXEC_TIME)
             else:
                 action = Action(Action.DRIVE_DIRECT, [0, 0])
 
+
             if charging != robot_inf.Charging.NOT_CHARGING:
                 action = Action(Action.TERMINATE)
-
             # If there was not dock to follow
             elif dock_count >= Docking.LOST_DOCK_LIMIT:
                 # If a new dock is found
                 if self._possible_action(sample):
                     action = Action(Action.DRIVE_DIRECT, [0, 0])
                     dock_count = 0
-                    sample_count = 0
-                    sample = self._get_sample_base()
                 else:
                     action = Action(Action.UNKNOWN)
                     self._prev_action = action
                     self._lost_center = False
+
+                sample_count = 0
+                sample = self._get_sample_base()
 
             # If there are enough samples to preform an action
             elif sample_count >= Docking.SAMPLES:
@@ -649,9 +669,8 @@ class Docking(_StoppableThread, Behavior):
                 # If the dock was detected
                 else:
                     # If not collision, generate a docking action.
-                    if action.type != Action.UNKNOWN:
-                        action = self._gen_action(sample)
-                        self._prev_action = action
+                    action = self._gen_action(sample)
+                    self._prev_action = action
                     dock_count = 0
 
                 sample_count = 0
@@ -728,7 +747,7 @@ class Docking(_StoppableThread, Behavior):
         """
         rtn = Action(Action.DRIVE_DIRECT, [0, 0],
                      wait_time=robot_inf.SENSOR_UPDATE_WAIT*5)
-        has_prev_action = self._prev_action.type == Action.UNKNOWN
+        has_prev_action = self._prev_action.type != Action.UNKNOWN
         forward = has_prev_action \
             and self._prev_action.type == Action.DRIVE_DIRECT \
             and self._prev_action.params[0] > 0 \
@@ -1018,7 +1037,6 @@ class WallFollow(_StoppableThread, Behavior):
 
         while not self._stop:
             # Log the previous action
-
             if self.has_action():
                 prev_action = self.get_action()
 
@@ -1154,6 +1172,9 @@ class RobotController(_StoppableThread):
             # start all behaviors. Otherwise stop all behaviors upon a CLEAN
             # button press.
             if sensor.is_btn_pressed(robot_inf.Button.CLEAN):
+                if sensor.get_oi_mode() == robot_inf.OI.PASSIVE:
+                    robot.change_state(robot_inf.State.SAFE)
+
                 # Start all behaviors
                 if len(self._active_behaviors) == 0:
                     self._log.log_stmt("Start Button Press")
