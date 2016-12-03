@@ -5,7 +5,7 @@ Group 3: Boyd Compton, Timothy Senn, & Jose Tadeo
 -----------
 - main.py -
 -----------
-    Dependences:
+    Dependencies:
         - pySerial
         - robot_inf.py
         - sensor_inf.py
@@ -18,24 +18,24 @@ Group 3: Boyd Compton, Timothy Senn, & Jose Tadeo
     Description:
         Main.py is the main program for project 4. This program was designed
         with the iRobot Create 2 in mind. The program will begin by initializing
-        the robot's state to PASSIVE mode and then SAFE mode. After this, the
+        the robot's state to PASSIVE mode and then to SAFE mode. After this, the
         robot will respond to the clean/power button being pressed. The main
-        program uses a behavior based controller. There are a totale of three 
+        program uses a behavior based controller. There are a total of three 
         behaviors (docking, wall following, and obstacle avoidance). The 
         selected action for each cycle is based on the associated behavior's 
-        priority. The executation of any action can be preempted by a higher
+        priority. The execution of any action can be preempted by a higher
         priority action. For this controller, a higher value in a behavior's 
         priority results in a higher priority.
 
         When the clean/power button is pressed and the robot is stopped, it
-        begin all behavior modules at this point in time. Each module will be 
-        will run simultaneously, and the behavior's action with the highest
-        priority will be selected each cycle. The behaviors will continue until
-        the CLEAN button is pressed again or the robot enters an unsafe state.
-        The program will be terminated if the robot manages to dock itself on
-        a charger.
+        will begin all behavior modules at this point in time. Each module will
+        be will run simultaneously, and the behavior's action with the highest
+        priority will be selected during each cycle. The behaviors will continue 
+        until the CLEAN button is pressed again or the robot enters an unsafe 
+        state. The program will be terminated if the robot manages to dock 
+        itself on a charger.
         
-        The robot will attempt to dock itself if it close enough to a docking
+        The robot will attempt to dock itself if it is close enough to a docking
         station to derive an action. 
 
     Execution:
@@ -48,8 +48,8 @@ Group 3: Boyd Compton, Timothy Senn, & Jose Tadeo
         clean/power button. Alternatively, the LED around the clean/power button
         will turn off when it is ready for input. Stop the robot by pressing
         the clean/power button again. To stop the execution of main.py,
-        first, ensure the robot is stopped. Next, type in 'exit' into the console
-        and then hit enter. Upon sucessfully docking, you will need to press the
+        first, ensure that the robot is stopped. Next, type in 'exit' into the console
+        and then hit enter. Upon successfully docking, you will need to press the
         enter key to completely terminate the program so that the pending 
         console input operation concludes.
         
@@ -63,16 +63,16 @@ Group 3: Boyd Compton, Timothy Senn, & Jose Tadeo
 ----------------
 - robot_inf.py -
 ----------------
-    Dependences:
+    Dependencies:
         - pySerial
         - serial_inf.py
 
         PySerial will need to be installed on the system while serial_inf.py
-        just need to be in the same directory as robot_inf.py.
+        just needs to be in the same directory as robot_inf.py.
 
     Description:
         Robot_inf.py is an interface tailored specifically to the iRobot
-        Create 2. In doing so, this module also contains specification for its
+        Create 2. In doing so, this module also contains specifications for its
         OI such as:
             - Default Buad rate
             - Period for the sensor's update
@@ -84,7 +84,7 @@ Group 3: Boyd Compton, Timothy Senn, & Jose Tadeo
             - WheelDrop (Ex: WHEEL_DROP_L)
             - Cliff (Ex: CLIFF_FL, CLIFF_R)
             - Dock (Ex: Dock.LEFT, Dock.RED_BUOY)
-            - Chargin (Ex: Charging.NOT_CHARGING)
+            - Charging (Ex: Charging.NOT_CHARGING)
 
         Also, the interface contains methods that will:
             - Drive the robot using velocity and radius or velocity for each wheel
@@ -197,7 +197,7 @@ Group 3: Boyd Compton, Timothy Senn, & Jose Tadeo
 -----------------
 - sensor_inf.py -
 -----------------
-    Dependences:
+    Dependencies:
         - pySerial
         - robot_inf.py
 
@@ -262,7 +262,7 @@ Group 3: Boyd Compton, Timothy Senn, & Jose Tadeo
             - Get the distance or angle from reference point
                 (Ex: sensor.get_distance(ref_dist) 
                      or sensor.get_angle(ref_angle))
-                NOTE: The reference point is just the encoders value at that
+                NOTE: The reference point is just the encoders' value at that
                       point in time (sensor.get_encoders()).
 
     Additional Help:
@@ -275,7 +275,7 @@ Group 3: Boyd Compton, Timothy Senn, & Jose Tadeo
 -----------------
 - serial_inf.py -
 -----------------
-    Dependences:
+    Dependencies:
         - pySerial
 
         PySerial will need to be installed on the system.
