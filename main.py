@@ -804,26 +804,12 @@ class Docking(_StoppableThread, Behavior):
 
                    The goal for this situation is to try and keep the red and
                    green buoy within the detection range.
-
-                2) The left IR sensor detects the green buoy and the right IR
-                   sensor does not detect the red buoy. This situation
-                   represents the case where the robot has slightly overturned
-                   counter-clockwise.
-
-                   The goal for this situation is to try and align the robot
-                   to the center of the dock
         :param sample:
             The sample that the decision is based on.
         :return:
             True if any of the above situations happen. Otherwise, False.
         """
-        if self._check_ir(sample[robot_inf.Dock.RIGHT],
-                          robot_inf.Dock.GREEN_BUOY) \
-                and not self._check_ir(sample[robot_inf.Dock.RIGHT],
-                                       robot_inf.Dock.RED_BUOY):
-            return True
-
-        return self._check_ir(sample[robot_inf.Dock.LEFT],
+        return self._check_ir(sample[robot_inf.Dock.RIGHT],
                               robot_inf.Dock.GREEN_BUOY) \
             and not self._check_ir(sample[robot_inf.Dock.RIGHT],
                                    robot_inf.Dock.RED_BUOY)
@@ -841,34 +827,21 @@ class Docking(_StoppableThread, Behavior):
 
                    The goal for this situation is to try and keep the red and
                    green buoy within the detection range.
-
-                2) The right IR sensor detects the red buoy and the left IR
-                   sensor does not detect the green buoy. This situation
-                   represents the case where the robot has slightly overturned
-                   clockwise.
-
-                   The goal for this situation is to try and align the robot
-                   to the center of the dock
         :param sample:
             The sample that the decision is based on.
         :return:
             True if any of the above situations happen. Otherwise, False.
         """
-        if not self._check_ir(sample[robot_inf.Dock.LEFT],
-                              robot_inf.Dock.GREEN_BUOY) \
-                and self._check_ir(sample[robot_inf.Dock.LEFT],
-                                   robot_inf.Dock.RED_BUOY):
-            return True
-
         return not self._check_ir(sample[robot_inf.Dock.LEFT],
                                   robot_inf.Dock.GREEN_BUOY) \
-            and self._check_ir(sample[robot_inf.Dock.RIGHT],
+            and self._check_ir(sample[robot_inf.Dock.LEFT],
                                robot_inf.Dock.RED_BUOY)
 
     def _drive_forward(self, sample):
         """
-            Determines if the robot should move forward by checking the left IR
-            sensor for the green buoy and the right for the red buoy.
+            Determines if the robot should move forward by checking the
+            combination of the left IR sensor and right IR sensor for the
+            green buoy and red buoy.
 
             The overall goal of this method is to approach the dock .
         :param sample:
@@ -876,6 +849,18 @@ class Docking(_StoppableThread, Behavior):
         :return:
             True if both sensors detect the respective buoy. Otherwise, False.
         """
+        if self._check_ir(sample[robot_inf.Dock.LEFT],
+                              robot_inf.Dock.GREEN_BUOY) \
+                and self._check_ir(sample[robot_inf.Dock.LEFT],
+                                   robot_inf.Dock.RED_BUOY):
+            return True
+
+        if self._check_ir(sample[robot_inf.Dock.RIGHT],
+                              robot_inf.Dock.GREEN_BUOY) \
+                and self._check_ir(sample[robot_inf.Dock.RIGHT],
+                                   robot_inf.Dock.RED_BUOY):
+            return True
+
         return self._check_ir(sample[robot_inf.Dock.LEFT],
                               robot_inf.Dock.GREEN_BUOY) \
             and self._check_ir(sample[robot_inf.Dock.RIGHT],
@@ -1172,9 +1157,6 @@ class RobotController(_StoppableThread):
             # start all behaviors. Otherwise stop all behaviors upon a CLEAN
             # button press.
             if sensor.is_btn_pressed(robot_inf.Button.CLEAN):
-                if sensor.get_oi_mode() == robot_inf.OI.PASSIVE:
-                    robot.change_state(robot_inf.State.SAFE)
-
                 # Start all behaviors
                 if len(self._active_behaviors) == 0:
                     self._log.log_stmt("Start Button Press")
@@ -1225,7 +1207,7 @@ class RobotController(_StoppableThread):
             # a higher priority action arrives. The action can also be
             # interrupted by a CLEAN button press.
             self._wait(self._exec_action.exec_time,
-                       robot_inf.SENSOR_UPDATE_WAIT, sensor)
+                       robot_inf.SENSOR_UPDATE_WAIT, sensor, robot)
         print "Stopping Listening"
 
         # Cleans up all threads spawned during execution.
@@ -1258,7 +1240,7 @@ class RobotController(_StoppableThread):
             self._active_behaviors.remove(behavior)
         robot.drive_direct(0,0)
 
-    def _wait(self, wait_time, interval, sensor):
+    def _wait(self, wait_time, interval, sensor, robot):
         """ Internal method that divides the time in between actuator
             commands into small intervals. This enables the ability
             to interrupt an action's execution.
@@ -1271,6 +1253,9 @@ class RobotController(_StoppableThread):
         :param sensor
             The handel for the sensor interface that is used to poll the
             robot's sensor data.
+        :type robot robot_inf.Robot
+        :param robot:
+            The connection to the robot
         """
         time_left = wait_time
 
@@ -1278,7 +1263,8 @@ class RobotController(_StoppableThread):
             start = time.time()
             # Tell the caller it needs to stop
             if self._interrupt(sensor):
-                return True
+                robot.drive_direct(0, 0)    # Halt the robot's movement
+                return
 
             # Determine the next sleep interval
             interval_time = interval
@@ -1339,6 +1325,7 @@ class RobotController(_StoppableThread):
             time.sleep(robot_inf.SENSOR_UPDATE_WAIT)
             robot.play_happy_song()
             action.exec_time = .5
+            self._log.log_stmt("Successful Dock; Terminating Program")
             print "Press any key to finish termination."
         elif action.type == Action.STOP_MODULES:
             self._stop_behaviors(robot)

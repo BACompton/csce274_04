@@ -218,7 +218,7 @@ class Dock:
         :return:
             True if the the 7th - 4th bits match the dock reserved bits.
         """
-        return msg & Dock.BASE == Dock.BASE
+        return msg & 0xF0 == Dock.BASE
 
     @staticmethod
     def decompose(msg):
